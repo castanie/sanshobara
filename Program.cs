@@ -23,17 +23,17 @@ Offsets:
     CFA record length (4 bytes)
 
 JPEG Image Offset:
-    EXIF (...)
+    EXIF (...) - Little Endian!
 
 CFA Header Offset:
     Record count (4 bytes)
     Records:
-        Record id (2 bytes)
-        Record size (2 bytes)
+        ID (2 bytes)
+        Size (2 bytes)
         Data (...)
 
 CFA Record Offset:
-    Data (...)
+    Data (...) - Little Endian!
 **/
 
 var CFAHeaderOffset = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(92));
@@ -41,21 +41,49 @@ var CFAHeaderLength = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(96));
 var CFARecordOffset = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(100));
 var CFARecordLength = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(104));
 
-Console.WriteLine("{0:x}, {1:x}", CFAHeaderOffset, CFAHeaderLength);
-Console.WriteLine("{0:x}, {1:x}", CFARecordOffset, CFARecordLength);
+var CFARecordCount = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan((int) CFAHeaderOffset));
+var CFARecords = new Record[CFARecordCount];
 
 /*
-using (Image<L8> image = new Image<L8>(4896, 3264))
+var _position = 0;
+for (int i = 0; i < CFARecordCount; ++i)
+{
+    var id = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan((int) CFAHeaderOffset + _position));
+    var size = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan((int) CFAHeaderOffset + _position));
+    CFARecords[i] = new Record();
+}
+*/
+
+Console.WriteLine("Header: offset = {0:x}, length = {1:x}", CFAHeaderOffset, CFAHeaderLength);
+Console.WriteLine("Record: offset = {0:x}, length = {1:x}", CFARecordOffset, CFARecordLength);
+Console.WriteLine("Record: count = {0:d}", CFARecordCount);
+
+
+var start = CFARecordOffset;
+
+using (Image<L8> image = new Image<L8>(4992, 3296))
 {
     for (int y = 0; y < image.Height; ++y)
     {
         for (int x = 0; x < image.Width; ++x)
         {
-            image[x, y] = new L8((byte) (BinaryPrimitives.ReadUInt16BigEndian(new ReadOnlySpan<byte>(file, (int) start, 2)) / 255));
+            image[x, y] = new L8((byte) (BinaryPrimitives.ReadUInt16LittleEndian(new ReadOnlySpan<byte>(file, (int) start, 2)) / 64));
             start += 2;
         }
     }
 
     image.SaveAsPng("img/DSCF.png");
 }
-*/
+
+
+class Record {
+    readonly short ID;
+    readonly short Size;
+    readonly byte[] Data;
+
+    public Record() {
+        this.ID = 0;
+        this.Size = 0;
+        this.Data = new byte[] {};
+    }
+}

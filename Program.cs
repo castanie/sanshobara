@@ -22,18 +22,27 @@ Offsets:
     CFA record offset (4 bytes)
     CFA record length (4 bytes)
 
-JPEG Image Offset:
+@JPEG Image Offset:
     EXIF (...) - Little Endian!
 
-CFA Header Offset:
+@CFA Header Offset:
     Record count (4 bytes)
     Records:
         ID (2 bytes)
         Size (2 bytes)
-        Data (...)
+        Data ({Size} bytes)
 
-CFA Record Offset:
-    Data (...) - Little Endian!
+@CFA Record Offset:
+    TIFF (...) - Little Endian!
+        Byte order (2 bytes)
+        Magic number (2 bytes)
+        IFD record offset (4 bytes)
+    
+    @IFD Record Offset:
+        Tag (2 bytes)
+        Type (2 bytes)
+        Value count (4 bytes)
+        Value offset (4 bytes)
 **/
 
 var CFAHeaderOffset = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(92));
@@ -59,7 +68,7 @@ Console.WriteLine("Record: offset = {0:x}, length = {1:x}", CFARecordOffset, CFA
 Console.WriteLine("Record: count = {0:d}", CFARecordCount);
 
 
-var start = CFARecordOffset;
+var start = 0x72400;
 
 using (Image<L8> image = new Image<L8>(4992, 3296))
 {
@@ -75,6 +84,12 @@ using (Image<L8> image = new Image<L8>(4992, 3296))
     image.SaveAsPng("img/DSCF.png");
 }
 
+
+/**
+Records[0].Data:
+    Image height (2 bytes)
+    Image width (2 bytes)
+**/
 
 class Record {
     readonly short ID;

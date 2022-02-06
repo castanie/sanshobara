@@ -3,7 +3,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
-var file = File.ReadAllBytes("img/DSCF.RAF");
+var file = File.ReadAllBytes("img/DSCF3255.RAF");
 
 /**
 Basic:
@@ -39,10 +39,12 @@ Offsets:
         IFD record offset (4 bytes)
     
     @IFD Record Offset:
-        Tag (2 bytes)
-        Type (2 bytes)
-        Value count (4 bytes)
-        Value offset (4 bytes)
+        Record count (2 bytes)
+        Records:
+            Tag (2 bytes)
+            Type (2 bytes)
+            Value count (4 bytes)
+            Value offset (4 bytes)
 **/
 
 var CFAHeaderOffset = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(92));
@@ -52,6 +54,13 @@ var CFARecordLength = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(104));
 
 var CFARecordCount = BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan((int) CFAHeaderOffset));
 var CFARecords = new Record[CFARecordCount];
+
+var IFDRecordOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int) CFARecordOffset + 4));
+var IFDValuesOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int) CFARecordOffset + (int) IFDRecordOffset + 8));
+
+Console.WriteLine("Header: offset = {0:x}, length = {1:x}", CFAHeaderOffset, CFAHeaderLength);
+Console.WriteLine("Record: offset = {0:x}, length = {1:x}", CFARecordOffset, CFARecordLength);
+Console.WriteLine("Record: ifdrec = {0:x}, ifdval = {1:x}", IFDRecordOffset, IFDValuesOffset);
 
 /*
 var _position = 0;
@@ -63,12 +72,9 @@ for (int i = 0; i < CFARecordCount; ++i)
 }
 */
 
-Console.WriteLine("Header: offset = {0:x}, length = {1:x}", CFAHeaderOffset, CFAHeaderLength);
-Console.WriteLine("Record: offset = {0:x}, length = {1:x}", CFARecordOffset, CFARecordLength);
-Console.WriteLine("Record: count = {0:d}", CFARecordCount);
 
-
-var start = 0x72400;
+var start = 0x5BE00;
+Console.WriteLine("Record: start = {0:x}", start);
 
 using (Image<L8> image = new Image<L8>(4992, 3296))
 {
@@ -76,12 +82,12 @@ using (Image<L8> image = new Image<L8>(4992, 3296))
     {
         for (int x = 0; x < image.Width; ++x)
         {
-            image[x, y] = new L8((byte) (BinaryPrimitives.ReadUInt16LittleEndian(new ReadOnlySpan<byte>(file, (int) start, 2)) / 64));
+            image[x, y] = new L8((byte) (BinaryPrimitives.ReadUInt16LittleEndian(new ReadOnlySpan<byte>(file, (int) start, 2)) / 32)); // 64!
             start += 2;
         }
     }
 
-    image.SaveAsPng("img/DSCF.png");
+    image.SaveAsPng("img/DSCF_B.png");
 }
 
 

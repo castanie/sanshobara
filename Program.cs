@@ -55,7 +55,7 @@ Offsets:
 
 /// RAF File:
 
-var RafFile = File.Open(args[0], FileMode.Open, FileAccess.Read);
+var RafFile = File.Open(args[0], FileMode.Open, FileAccess.ReadWrite);
 
 // -------------------------------------------------------------------------- //
 
@@ -169,16 +169,14 @@ for (int i = 0; i < SubIfdRecordCount; ++i)
     );
 }
 
-Console.WriteLine("~~~");
-
 // -------------------------------------------------------------------------- //
 
 /// CFA Records:
 
-var buffer = new byte[6384 * 4182 * 2];
+var buffer16 = new byte[6384 * 4182 * 2].AsSpan();
 
 RafFile.Position = CfaRecordOffset + 0x800;
-RafFile.Read(buffer);
+RafFile.Read(buffer16);
 
 using (var image = new Image<L8>(6384, 4182))
 {
@@ -188,11 +186,31 @@ using (var image = new Image<L8>(6384, 4182))
         for (int x = 0; x < image.Width; ++x)
         {
             offset = (y * image.Width + x) * 2;
-            image[x, y] = new L8((byte)(BinaryPrimitives.ReadInt16LittleEndian(buffer[offset..(offset + 2)]) / 64));
+            image[x, y] = new L8((byte)(BinaryPrimitives.ReadInt16LittleEndian(buffer16.Slice(offset, 2)) / (2 << 5)));
         }
     }
     image.SaveAsPng("img/DSCF.png");
 }
+
+// -------------------------------------------------------------------------- //
+
+/// HALD Records:
+
+var buffer8 = new byte[6384 * 4182].AsSpan();
+
+using (var image = Image.Load<L8>(args[1]))
+{
+    image.CopyPixelDataTo(buffer8);
+}
+
+for (int i = 0; i < buffer8.Length; ++i)
+{
+    var offset = i * 2;
+    BinaryPrimitives.WriteUInt16LittleEndian(buffer16.Slice(offset, 2), (ushort)(buffer8[i] * (2 << 5)));
+}
+
+RafFile.Position = CfaRecordOffset + 0x800;
+RafFile.Write(buffer16);
 
 // -------------------------------------------------------------------------- //
 

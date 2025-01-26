@@ -64,7 +64,7 @@ var RafFile = File.Open(args[0], FileMode.Open, FileAccess.ReadWrite);
 var RafHeader = new byte[24];
 
 RafFile.Position = 84;
-RafFile.Read(RafHeader);
+RafFile.ReadExactly(RafHeader);
 
 var JpegImageOffset = BinaryPrimitives.ReadInt32BigEndian(RafHeader[0..]);
 var JpegImageLength = BinaryPrimitives.ReadInt32BigEndian(RafHeader[4..]);
@@ -86,7 +86,7 @@ Console.WriteLine("~~~");
 var TifHeader = new byte[8];
 
 RafFile.Position = CfaRecordOffset;
-RafFile.Read(TifHeader);
+RafFile.ReadExactly(TifHeader);
 
 var IfdHeaderOffset = BinaryPrimitives.ReadInt32LittleEndian(TifHeader[4..]);
 
@@ -101,7 +101,7 @@ Console.WriteLine("~~~");
 var IfdHeader = new byte[2];
 
 RafFile.Position = CfaRecordOffset + IfdHeaderOffset;
-RafFile.Read(IfdHeader);
+RafFile.ReadExactly(IfdHeader);
 
 var IfdRecordCount = BinaryPrimitives.ReadInt16LittleEndian(IfdHeader[0..]);
 
@@ -116,7 +116,7 @@ Console.WriteLine("~~~");
 var IfdRecord = new byte[12];
 
 RafFile.Position = CfaRecordOffset + IfdHeaderOffset + 2;
-RafFile.Read(IfdRecord);
+RafFile.ReadExactly(IfdRecord);
 
 var ifdTag = BinaryPrimitives.ReadInt16LittleEndian(IfdRecord[0..]);
 var ifdType = BinaryPrimitives.ReadInt16LittleEndian(IfdRecord[2..]);
@@ -136,7 +136,7 @@ Console.WriteLine("~~~");
 var SubIfdHeader = new byte[2];
 
 RafFile.Position = CfaRecordOffset + SubIfdHeaderOffset;
-RafFile.Read(SubIfdHeader);
+RafFile.ReadExactly(SubIfdHeader);
 
 var SubIfdRecordCount = BinaryPrimitives.ReadInt16LittleEndian(SubIfdHeader[0..]);
 
@@ -153,7 +153,7 @@ for (int i = 0; i < SubIfdRecordCount; ++i)
     var SubIfdRecord = new byte[12];
 
     RafFile.Position = CfaRecordOffset + SubIfdHeaderOffset + 2 + (i * 12);
-    RafFile.Read(SubIfdRecord);
+    RafFile.ReadExactly(SubIfdRecord);
 
     var subIfdTag = BinaryPrimitives.ReadInt16LittleEndian(SubIfdRecord[0..]);
     var subIfdType = BinaryPrimitives.ReadInt16LittleEndian(SubIfdRecord[2..]);
@@ -176,17 +176,19 @@ for (int i = 0; i < SubIfdRecordCount; ++i)
 var buffer16 = new byte[6384 * 4182 * 2].AsSpan();
 
 RafFile.Position = CfaRecordOffset + 0x800;
-RafFile.Read(buffer16);
+RafFile.ReadExactly(buffer16);
 
 using (var image = new Image<L8>(6384, 4182))
 {
     var offset = 0;
+    var value = 0;
     for (int y = 0; y < image.Height; ++y)
     {
         for (int x = 0; x < image.Width; ++x)
         {
             offset = (y * image.Width + x) * 2;
-            image[x, y] = new L8((byte)(BinaryPrimitives.ReadInt16LittleEndian(buffer16.Slice(offset, 2)) / (2 << 5)));
+            value = BinaryPrimitives.ReadInt16LittleEndian(buffer16.Slice(offset, 2));
+            image[x, y] = new L8((byte)(value / (2 << 5)));
         }
     }
     image.SaveAsPng("img/DSCF.png");
@@ -196,17 +198,32 @@ using (var image = new Image<L8>(6384, 4182))
 
 /// HALD Records:
 
-var buffer8 = new byte[6384 * 4182].AsSpan();
+int[][] ColorFilterArray = [
+  [1, 1, 0, 1, 1, 2],
+  [1, 1, 2, 1, 1, 0],
+  [2, 0, 1, 0, 2, 1],
+  [1, 1, 2, 1, 1, 0],
+  [1, 1, 0, 1, 1, 2],
+  [0, 2, 1, 2, 0, 1]
+];
 
-using (var image = Image.Load<L8>(args[1]))
+var buffer24 = new byte[6384 * 4182 * 3].AsSpan();
+
+using (var image = Image.Load<Rgb24>(args[1]))
 {
-    image.CopyPixelDataTo(buffer8);
+    image.CopyPixelDataTo(buffer24);
 }
 
-for (int i = 0; i < buffer8.Length; ++i)
+for (int y = 0; y < 4182; ++y)
 {
-    var offset = i * 2;
-    BinaryPrimitives.WriteUInt16LittleEndian(buffer16.Slice(offset, 2), (ushort)(buffer8[i] * (2 << 5)));
+    for (int x = 0; x < 6384; ++x)
+    {
+        var offset16 = (y * 6384 + x) * 2;
+        var offset24 = (y * 6384 + x) * 3 + ColorFilterArray[y % 6][x % 6];
+        var value = (ushort)(buffer24[offset24] * (((2 << 13) - (2 << 7)) / ((2 << 7) - 1)) + ((2 << 7) - 1));
+
+        BinaryPrimitives.WriteUInt16LittleEndian(buffer16.Slice(offset16, 2), value);
+    }
 }
 
 RafFile.Position = CfaRecordOffset + 0x800;

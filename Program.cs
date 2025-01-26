@@ -173,61 +173,106 @@ for (int i = 0; i < SubIfdRecordCount; ++i)
 
 /// CFA Records:
 
-var buffer16 = new byte[6384 * 4182 * 2].AsSpan();
-
-RafFile.Position = CfaRecordOffset + 0x800;
-RafFile.ReadExactly(buffer16);
-
-using (var image = new Image<L8>(6384, 4182))
+if (false)
 {
-    var offset = 0;
-    var value = 0;
-    for (int y = 0; y < image.Height; ++y)
+    var buffer16 = new byte[6384 * 4182 * 2].AsSpan();
+
+    RafFile.Position = CfaRecordOffset + 0x800;
+    RafFile.ReadExactly(buffer16);
+
+    using (var image = new Image<L8>(6384, 4182))
     {
-        for (int x = 0; x < image.Width; ++x)
+        var offset = 0;
+        var value = 0;
+        for (int y = 0; y < image.Height; ++y)
         {
-            offset = (y * image.Width + x) * 2;
-            value = BinaryPrimitives.ReadInt16LittleEndian(buffer16.Slice(offset, 2));
-            image[x, y] = new L8((byte)(value / (2 << 5)));
+            for (int x = 0; x < image.Width; ++x)
+            {
+                offset = (y * image.Width + x) * 2;
+                value = BinaryPrimitives.ReadInt16LittleEndian(buffer16.Slice(offset, 2));
+                image[x, y] = new L8((byte)(value / (2 << 5)));
+            }
         }
+        image.SaveAsPng("img/DSCF.png");
     }
-    image.SaveAsPng("img/DSCF.png");
 }
 
 // -------------------------------------------------------------------------- //
 
-/// HALD Records:
+/// HALD Injection:
 
-int[][] ColorFilterArray = [
-  [1, 1, 0, 1, 1, 2],
-  [1, 1, 2, 1, 1, 0],
-  [2, 0, 1, 0, 2, 1],
-  [1, 1, 2, 1, 1, 0],
-  [1, 1, 0, 1, 1, 2],
-  [0, 2, 1, 2, 0, 1]
-];
-
-var buffer24 = new byte[6384 * 4182 * 3].AsSpan();
-
-using (var image = Image.Load<Rgb24>(args[1]))
+if (false)
 {
-    image.CopyPixelDataTo(buffer24);
+    int[][] ColorFilterArray = [
+        [1, 1, 0, 1, 1, 2],
+        [1, 1, 2, 1, 1, 0],
+        [2, 0, 1, 0, 2, 1],
+        [1, 1, 2, 1, 1, 0],
+        [1, 1, 0, 1, 1, 2],
+        [0, 2, 1, 2, 0, 1]
+    ];
+
+    var buffer16 = new byte[6384 * 4182 * 2].AsSpan();
+
+    RafFile.Position = CfaRecordOffset + 0x800;
+    RafFile.ReadExactly(buffer16);
+
+    var buffer24 = new byte[6384 * 4182 * 3].AsSpan();
+
+    using (var image = Image.Load<Rgb24>(args[1]))
+    {
+        image.CopyPixelDataTo(buffer24);
+    }
+
+    for (int y = 0; y < 4182; ++y)
+    {
+        for (int x = 0; x < 6384; ++x)
+        {
+            var offset16 = (y * 6384 + x) * 2;
+            var offset24 = (y * 6384 + x) * 3 + ColorFilterArray[y % 6][x % 6];
+            var value = (ushort)(buffer24[offset24] * (((2 << 13) - (2 << 7)) / ((2 << 7) - 1)) + ((2 << 7) - 1));
+
+            BinaryPrimitives.WriteUInt16LittleEndian(buffer16.Slice(offset16, 2), value);
+        }
+    }
+
+    RafFile.Position = CfaRecordOffset + 0x800;
+    RafFile.Write(buffer16);
 }
 
-for (int y = 0; y < 4182; ++y)
-{
-    for (int x = 0; x < 6384; ++x)
-    {
-        var offset16 = (y * 6384 + x) * 2;
-        var offset24 = (y * 6384 + x) * 3 + ColorFilterArray[y % 6][x % 6];
-        var value = (ushort)(buffer24[offset24] * (((2 << 13) - (2 << 7)) / ((2 << 7) - 1)) + ((2 << 7) - 1));
+// -------------------------------------------------------------------------- //
 
-        BinaryPrimitives.WriteUInt16LittleEndian(buffer16.Slice(offset16, 2), value);
+/// HDR Extraction:
+
+if (true)
+{
+    var HdrHeader = new byte[CfaRecordOffset].AsSpan();
+
+    RafFile.Position = 0;
+    RafFile.ReadExactly(HdrHeader);
+
+    RafFile.Position = 0;
+    foreach (var exposureValue in new[] { "±0", "-1", "+1" })
+    {
+        RafFile.Position += 84;
+        RafFile.ReadExactly(RafHeader);
+
+        CfaRecordOffset = BinaryPrimitives.ReadInt32BigEndian(RafHeader[16..]);
+        CfaRecordLength = BinaryPrimitives.ReadInt32BigEndian(RafHeader[20..]);
+
+        var HdrBuffer = new byte[CfaRecordLength].AsSpan();
+
+        RafFile.Position -= 84 + 24;
+        RafFile.Position += CfaRecordOffset;
+        RafFile.ReadExactly(HdrBuffer);
+
+        using (var HdrFile = File.Open(Path.Combine(Path.GetDirectoryName(args[0]) ?? "", Path.GetFileNameWithoutExtension(args[0]) + $" ({exposureValue}EV).RAF"), FileMode.Create, FileAccess.Write))
+        {
+            HdrFile.Write(HdrHeader);
+            HdrFile.Write(HdrBuffer);
+        }
     }
 }
-
-RafFile.Position = CfaRecordOffset + 0x800;
-RafFile.Write(buffer16);
 
 // -------------------------------------------------------------------------- //
 
